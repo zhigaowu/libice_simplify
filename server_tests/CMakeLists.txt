@@ -1,0 +1,69 @@
+cmake_minimum_required(VERSION 3.22)
+
+PROJECT(server_tests VERSION 1.0.0 LANGUAGES CXX)
+
+# 打印项目信息
+MESSAGE(STATUS "===== ${PROJECT_NAME} ====")
+MESSAGE(STATUS "--------------------------------------------------")
+MESSAGE(STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
+
+# 打印编译标志
+PRINT_CPLUS_FLAGS()
+
+# 打印空行，结束项目信息
+MESSAGE(STATUS "--------------------------------------------------")
+
+# 生成stub/*.cpp文件
+ADD_CUSTOM_COMMAND(
+    OUTPUT ${STUB_SOURCES}
+    COMMAND ${Ice_SLICE2CPP_EXECUTABLE} --output-dir stub ${SLICE_SOURCES}
+    DEPENDS ${SLICE_SOURCES}
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Generating stub sources ...")
+
+# 生成impl/*.cpp文件
+FILE(MAKE_DIRECTORY "${PROJECT_SOURCE_DIR}/impl")
+
+FOREACH(SLICE_SOURCE ${SLICE_SOURCES})
+    GET_FILENAME_COMPONENT(SLICE_FILE_NAME ${SLICE_SOURCE} NAME_WE)
+
+    LIST(APPEND STUB_DUP_SOURCES "${PROJECT_SOURCE_DIR}/impl/${SLICE_FILE_NAME}.h")
+    LIST(APPEND STUB_DUP_SOURCES "${PROJECT_SOURCE_DIR}/impl/${SLICE_FILE_NAME}.cpp")
+
+    LIST(APPEND STUB_IMPL_SOURCES "${PROJECT_SOURCE_DIR}/impl/${SLICE_FILE_NAME}I.h")
+    LIST(APPEND STUB_IMPL_SOURCES "${PROJECT_SOURCE_DIR}/impl/${SLICE_FILE_NAME}I.cpp")
+ENDFOREACH()
+
+ADD_CUSTOM_COMMAND(
+    OUTPUT ${STUB_IMPL_SOURCES}
+    COMMAND ${Ice_SLICE2CPP_EXECUTABLE} --impl-c++11 --output-dir impl ${SLICE_SOURCES}
+    DEPENDS ${SLICE_SOURCES}
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    COMMENT "Generating implemention sources ...")
+
+# 将所有 src/*.cpp 文件列出来
+FILE(GLOB SIMPLIFY_SOURCES ${CMAKE_SOURCE_DIR}/src/*.cpp)
+FILE(GLOB MAIN_SOURCES ${PROJECT_SOURCE_DIR}/src/*.cpp)
+
+# 所有的源文件+头文件需要在这个地方添加
+ADD_EXECUTABLE(server_tests ${SIMPLIFY_SOURCES} ${STUB_SOURCES} ${STUB_IMPL_SOURCES} ${MAIN_SOURCES})
+
+ADD_CUSTOM_COMMAND(
+    TARGET server_tests
+    PRE_BUILD
+    COMMAND rm -f ${STUB_DUP_SOURCES}
+    DEPENDS ${STUB_DUP_SOURCES}
+    COMMENT "Delete duplicated stub sources ...")
+
+TARGET_INCLUDE_DIRECTORIES(server_tests PRIVATE ${PROJECT_SOURCE_DIR}/impl)
+
+TARGET_LINK_LIBRARIES(server_tests PRIVATE ${Ice_LIBRARIES})
+TARGET_LINK_LIBRARIES(server_tests PRIVATE ${libglog_LIBRARIES} pthread)
+
+IF (WIN32)
+    TARGET_LINK_LIBRARIES(server_tests PRIVATE wsock32 ws2_32 iphlpapi)
+ENDIF()
+
+install(TARGETS server_tests
+    RUNTIME DESTINATION ${CMAKE_SOURCE_DIR}/install COMPONENT server_tests)
+
